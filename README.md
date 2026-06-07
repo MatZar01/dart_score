@@ -15,7 +15,8 @@ The app uses a left-side scoreboard and a right-side clickable dartboard. It doe
 - Scrollable throw table that auto-scrolls to keep the current player's input area visible.
 - Per-player statistics with a horizontally scrollable stats area.
 - Histogram bar chart, mean, median, and population standard deviation for each player's dart scores.
-- Undo button for the current unfinished turn.
+- Click-to-edit dart scores directly in the scoreboard.
+- Explicit `Next turn` button after a player finishes a turn.
 - Bust handling when a throw takes the score below zero.
 
 ## Run
@@ -49,8 +50,8 @@ Verified in this environment with Python 3.13 and Tk 8.6.
 3. Select `501` or `301`.
 4. Click `Start Game`.
 5. For each dart, click the matching dartboard segment or click `Miss / 0`.
-6. After three darts, the app automatically switches to the next player.
-7. Use `Undo Dart` only before the current player's turn is finished.
+6. After three darts, click `Next turn` to switch to the next player.
+7. Click an existing dart score in the scoreboard to edit it manually.
 8. Use `New Game` to return to setup.
 
 ## Scoreboard Layout

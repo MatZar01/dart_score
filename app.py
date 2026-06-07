@@ -5,7 +5,7 @@ import statistics
 import tkinter as tk
 from collections import Counter
 from dataclasses import dataclass, field
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 
 DART_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
@@ -37,6 +37,7 @@ class DartScoreApp(tk.Tk):
         self.dart_in_turn = 0
         self.turn_scores: list[int] = []
         self.turn_start_score = 0
+        self.pending_turn_complete = False
         self.match_over = False
 
         self.score_labels: dict[int, tk.Label] = {}
@@ -49,6 +50,7 @@ class DartScoreApp(tk.Tk):
         self.dart_label: tk.Label | None = None
         self.throw_label: tk.Label | None = None
         self.status_label: tk.Label | None = None
+        self.next_turn_button: ttk.Button | None = None
         self.board_canvas: tk.Canvas | None = None
 
         self._configure_style()
@@ -126,6 +128,7 @@ class DartScoreApp(tk.Tk):
         self.dart_in_turn = 0
         self.turn_scores = []
         self.turn_start_score = self.players[0].score
+        self.pending_turn_complete = False
         self.match_over = False
         self.show_game_screen()
         self.refresh_status()
@@ -310,6 +313,10 @@ class DartScoreApp(tk.Tk):
                         pady=6,
                     )
                     cell.grid(row=throw_idx, column=base_col + dart_idx, sticky="nsew", padx=1, pady=1)
+                    cell.bind(
+                        "<Button-1>",
+                        lambda _event, p=player_idx, t=throw_idx, d=dart_idx: self.edit_score_cell(p, t, d),
+                    )
                     self.throw_cells[(player_idx, throw_idx, dart_idx)] = cell
                 sum_cell = tk.Label(
                     body_table,
@@ -391,7 +398,8 @@ class DartScoreApp(tk.Tk):
 
         buttons = tk.Frame(panel, bg="#fffaf0")
         buttons.pack(anchor="w", pady=(14, 0))
-        ttk.Button(buttons, text="Undo Dart", command=self.undo_dart).pack(side="left", padx=(0, 10))
+        self.next_turn_button = ttk.Button(buttons, text="Next turn", command=self.next_turn)
+        self.next_turn_button.pack(side="left", padx=(0, 10))
         ttk.Button(buttons, text="New Game", command=self.show_setup_screen).pack(side="left")
         self.refresh_status()
 
@@ -504,12 +512,13 @@ class DartScoreApp(tk.Tk):
         self.apply_throw(value, label)
 
     def apply_throw(self, value: int, label: str) -> None:
-        if self.match_over:
+        if self.match_over or self.pending_turn_complete:
             return
         player = self.players[self.current_player_idx]
         throw_idx = self.current_throw_index(player)
         if throw_idx >= MAX_THROWS:
-            self.end_turn()
+            self.pending_turn_complete = True
+            self.refresh_status()
             return
 
         if self.dart_in_turn == 0:
@@ -531,42 +540,91 @@ class DartScoreApp(tk.Tk):
             player.bust_rows.add(throw_idx)
             self.refresh_scoreboard()
             self.status_label.config(text=f"Bust. {player.name} returns to {player.score}.")
-            self.end_turn()
+            self.pending_turn_complete = True
+            self.refresh_status()
             return
 
         self.refresh_scoreboard()
         if self.dart_in_turn >= DARTS_PER_THROW:
-            self.end_turn()
+            self.pending_turn_complete = True
+            self.status_label.config(text=f"{player.name} finished this turn. Click Next turn.")
+            self.refresh_status()
         else:
             self.refresh_status()
 
-    def undo_dart(self) -> None:
-        if self.match_over or not self.turn_scores:
+    def edit_score_cell(self, player_idx: int, throw_idx: int, dart_idx: int) -> None:
+        if self.match_over:
             return
-        player = self.players[self.current_player_idx]
-        throw_idx = self.current_throw_index(player)
-        value = self.turn_scores.pop()
-        self.dart_in_turn -= 1
-        player.throws[throw_idx][self.dart_in_turn] = None
-        player.score += value
-        self.status_label.config(text=f"Undid {value} for {player.name}.")
-        self.refresh_scoreboard()
+
+        player = self.players[player_idx]
+        current_value = player.throws[throw_idx][dart_idx]
+        if current_value is None:
+            return
+
+        edited_value = simpledialog.askinteger(
+            "Edit score",
+            f"{player.name}, throw {throw_idx + 1}, dart {dart_idx + 1}:",
+            initialvalue=current_value,
+            minvalue=0,
+            maxvalue=60,
+            parent=self,
+        )
+        if edited_value is None:
+            return
+
+        player.throws[throw_idx][dart_idx] = edited_value
+        if player_idx == self.current_player_idx and throw_idx == self.current_throw_index(player):
+            self.turn_scores = [score for score in player.throws[throw_idx][: self.dart_in_turn] if score is not None]
+
+        self.recompute_scores_from_scoreboard()
+        if self.status_label:
+            self.status_label.config(text=f"Edited {player.name}: dart {dart_idx + 1} is now {edited_value}.")
         self.refresh_status()
 
-    def end_turn(self) -> None:
+    def next_turn(self) -> None:
+        if self.match_over or not self.pending_turn_complete:
+            return
+
         player = self.players[self.current_player_idx]
         if self.dart_in_turn > 0 and player.throw_count < MAX_THROWS:
             player.throw_count += 1
 
         self.dart_in_turn = 0
         self.turn_scores = []
+        self.pending_turn_complete = False
 
         if self.all_throw_rows_used():
             self.finish_by_lowest_score()
             return
 
         self.current_player_idx = self.next_player_with_available_throw()
+        self.turn_start_score = self.players[self.current_player_idx].score
         self.refresh_status()
+
+    def rows_to_score(self, player_idx: int, player: Player) -> int:
+        rows = player.throw_count
+        if player_idx == self.current_player_idx and (self.dart_in_turn > 0 or self.pending_turn_complete):
+            rows = max(rows, player.throw_count + 1)
+        return min(rows, MAX_THROWS)
+
+    def recompute_scores_from_scoreboard(self) -> None:
+        for player_idx, player in enumerate(self.players):
+            score = self.game_score.get()
+            bust_rows: set[int] = set()
+
+            for row_idx in range(self.rows_to_score(player_idx, player)):
+                row_start_score = score
+                for value in player.throws[row_idx]:
+                    if value is None:
+                        continue
+                    score -= value
+                    if score < 0:
+                        score = row_start_score
+                        bust_rows.add(row_idx)
+                        break
+
+            player.score = score
+            player.bust_rows = bust_rows
 
     def current_throw_index(self, player: Player) -> int:
         return player.throw_count
@@ -717,6 +775,7 @@ class DartScoreApp(tk.Tk):
                     self.throw_cells[(player_idx, throw_idx, dart_idx)].config(
                         text="" if value is None else str(value),
                         bg=bg,
+                        cursor="hand2" if value is not None else "",
                     )
 
                 sum_text = "" if not row_values else str(sum(row_values))
@@ -742,6 +801,8 @@ class DartScoreApp(tk.Tk):
                 self.dart_label.config(text="Start a new game to continue.")
             if self.throw_label:
                 self.throw_label.config(text="Throws this turn: -")
+            if self.next_turn_button:
+                self.next_turn_button.config(state="disabled")
             return
 
         player = self.players[self.current_player_idx]
@@ -749,12 +810,16 @@ class DartScoreApp(tk.Tk):
         if self.turn_label:
             self.turn_label.config(text=f"Throwing: {player.name}")
         if self.dart_label:
-            self.dart_label.config(
-                text=f"Throw {throw_idx + 1}/{MAX_THROWS} | Dart {self.dart_in_turn + 1}/{DARTS_PER_THROW} | Remaining: {player.score}"
-            )
+            if self.pending_turn_complete:
+                text = f"Throw {throw_idx + 1}/{MAX_THROWS} complete | Remaining: {player.score}"
+            else:
+                text = f"Throw {throw_idx + 1}/{MAX_THROWS} | Dart {self.dart_in_turn + 1}/{DARTS_PER_THROW} | Remaining: {player.score}"
+            self.dart_label.config(text=text)
         if self.throw_label:
             thrown = ", ".join(str(score) for score in self.turn_scores) if self.turn_scores else "-"
             self.throw_label.config(text=f"Throws this turn: {thrown}")
+        if self.next_turn_button:
+            self.next_turn_button.config(state="normal" if self.pending_turn_complete else "disabled")
         self.refresh_scoreboard()
 
 
