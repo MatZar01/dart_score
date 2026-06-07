@@ -18,19 +18,6 @@ The app uses a left-side scoreboard and a right-side clickable dartboard. It doe
 - Undo button for the current unfinished turn.
 - Bust handling when a throw takes the score below zero.
 
-## Run
-
-```bash
-conda activate dart
-python app.py
-```
-
-Or without activating first:
-
-```bash
-conda run -n dart python app.py
-```
-
 ## Libraries
 
 No third-party libraries are required.
