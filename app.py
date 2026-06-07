@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 import statistics
 import tkinter as tk
 from collections import Counter
@@ -10,7 +11,10 @@ from tkinter import messagebox, simpledialog, ttk
 
 DART_NUMBERS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5]
 MAX_THROWS = 15
+AIMED_MAX_THROWS = 10
 DARTS_PER_THROW = 3
+COUNTDOWN_GAMES = {"501": 501, "301": 301}
+AIMED_GAME = "Aimed"
 
 
 @dataclass
@@ -32,13 +36,14 @@ class DartScoreApp(tk.Tk):
         self.minsize(1040, 680)
 
         self.players: list[Player] = []
-        self.game_score = tk.IntVar(value=501)
+        self.game_mode = tk.StringVar(value="501")
         self.current_player_idx = 0
         self.dart_in_turn = 0
         self.turn_scores: list[int] = []
         self.turn_start_score = 0
         self.pending_turn_complete = False
         self.match_over = False
+        self.aimed_targets: list[int | None] = [None] * MAX_THROWS
 
         self.score_labels: dict[int, tk.Label] = {}
         self.throw_cells: dict[tuple[int, int, int], tk.Label] = {}
@@ -80,7 +85,7 @@ class DartScoreApp(tk.Tk):
         ttk.Label(container, text="Dart Score", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             container,
-            text="Enter players, choose 501 or 301, then play one leg with up to 15 throws per player.",
+            text="Enter players, choose a game, then play one leg with up to 15 throws per player, or 10 in Aimed.",
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(4, 28))
 
@@ -112,8 +117,9 @@ class DartScoreApp(tk.Tk):
         ttk.Label(form, text="Game", font=("DejaVu Sans", 14, "bold"), background="#fffaf0").pack(anchor="w")
         game_row = ttk.Frame(form, style="Card.TFrame")
         game_row.pack(anchor="w", pady=(8, 22))
-        ttk.Radiobutton(game_row, text="501", variable=self.game_score, value=501).pack(side="left", padx=(0, 18))
-        ttk.Radiobutton(game_row, text="301", variable=self.game_score, value=301).pack(side="left")
+        ttk.Radiobutton(game_row, text="501", variable=self.game_mode, value="501").pack(side="left", padx=(0, 18))
+        ttk.Radiobutton(game_row, text="301", variable=self.game_mode, value="301").pack(side="left", padx=(0, 18))
+        ttk.Radiobutton(game_row, text="Aimed", variable=self.game_mode, value=AIMED_GAME).pack(side="left")
 
         ttk.Button(form, text="Start Game", command=self.start_match).pack(anchor="w")
 
@@ -123,15 +129,58 @@ class DartScoreApp(tk.Tk):
             messagebox.showerror("Players required", "Enter at least two player names.")
             return
 
-        self.players = [Player(name=name, score=self.game_score.get()) for name in names]
+        self.players = [Player(name=name, score=self.starting_score()) for name in names]
         self.current_player_idx = 0
         self.dart_in_turn = 0
         self.turn_scores = []
         self.turn_start_score = self.players[0].score
         self.pending_turn_complete = False
         self.match_over = False
+        self.aimed_targets = [None] * MAX_THROWS
+        self.ensure_aimed_target(0)
         self.show_game_screen()
         self.refresh_status()
+
+    def is_aimed_game(self) -> bool:
+        return self.game_mode.get() == AIMED_GAME
+
+    def starting_score(self) -> int:
+        return 0 if self.is_aimed_game() else COUNTDOWN_GAMES[self.game_mode.get()]
+
+    def game_title(self) -> str:
+        if self.is_aimed_game():
+            return f"{AIMED_GAME} | {self.game_throw_limit()} throws"
+        return f"{self.game_mode.get()} | {self.game_throw_limit()} throws per player"
+
+    def game_throw_limit(self) -> int:
+        return AIMED_MAX_THROWS if self.is_aimed_game() else MAX_THROWS
+
+    def ensure_aimed_target(self, throw_idx: int) -> int | None:
+        if not self.is_aimed_game():
+            return None
+
+        if throw_idx >= self.game_throw_limit():
+            return None
+
+        target = self.aimed_targets[throw_idx]
+        if target is None:
+            target = random.randint(1, 20)
+            self.aimed_targets[throw_idx] = target
+        return target
+
+    def aimed_score_value(self, raw_value: int, label: str, target: int | None) -> int:
+        if target is None or label in {"MISS", "B25", "B50"}:
+            return 0
+
+        board_number = ""
+        for char in label[1:]:
+            if not char.isdigit():
+                break
+            board_number += char
+
+        if not board_number or int(board_number) != target:
+            return 0
+        return raw_value
 
     def show_game_screen(self) -> None:
         self.clear()
@@ -160,7 +209,7 @@ class DartScoreApp(tk.Tk):
 
         header = tk.Label(
             holder,
-            text=f"{self.game_score.get()} | {MAX_THROWS} throws per player",
+            text=self.game_title(),
             bg="#fffaf0",
             fg="#241f1b",
             font=("DejaVu Serif", 22, "bold"),
@@ -267,7 +316,8 @@ class DartScoreApp(tk.Tk):
             score.pack(fill="both", expand=True)
             self.score_labels[player_idx] = score
 
-            for offset, label in enumerate(("D1", "D2", "D3", "Sum")):
+            sum_label = "Tgt/Sum" if self.is_aimed_game() else "Sum"
+            for offset, label in enumerate(("D1", "D2", "D3", sum_label)):
                 tk.Label(
                     fixed_header,
                     text=label,
@@ -290,7 +340,7 @@ class DartScoreApp(tk.Tk):
             pady=5,
         ).grid(row=2, column=0, sticky="nsew", padx=1, pady=1)
 
-        for throw_idx in range(MAX_THROWS):
+        for throw_idx in range(self.game_throw_limit()):
             tk.Label(
                 body_table,
                 text=str(throw_idx + 1),
@@ -404,7 +454,7 @@ class DartScoreApp(tk.Tk):
         self.refresh_status()
 
     def _build_dartboard(self, parent: ttk.Frame) -> None:
-        tk.Label(parent, text="Click Dart Board", bg="#fffaf0", fg="#241f1b", font=("DejaVu Serif", 20, "bold")).pack(anchor="w")
+        tk.Label(parent, text="Click Score Board", bg="#fffaf0", fg="#241f1b", font=("DejaVu Serif", 20, "bold")).pack(anchor="w")
         canvas = tk.Canvas(parent, width=520, height=560, bg="#fffaf0", highlightthickness=0)
         canvas.pack(pady=(8, 0))
         self.board_canvas = canvas
@@ -516,26 +566,36 @@ class DartScoreApp(tk.Tk):
             return
         player = self.players[self.current_player_idx]
         throw_idx = self.current_throw_index(player)
-        if throw_idx >= MAX_THROWS:
+        if throw_idx >= self.game_throw_limit():
             self.pending_turn_complete = True
             self.refresh_status()
             return
 
         if self.dart_in_turn == 0:
+            self.ensure_aimed_target(throw_idx)
             self.turn_start_score = player.score
             self.turn_scores = []
 
-        player.throws[throw_idx][self.dart_in_turn] = value
-        player.score -= value
-        self.dart_in_turn += 1
-        self.turn_scores.append(value)
-        self.status_label.config(text=f"{player.name}: {label} = {value}")
+        target = self.aimed_targets[throw_idx] if self.is_aimed_game() else None
+        scored_value = self.aimed_score_value(value, label, target) if self.is_aimed_game() else value
 
-        if player.score == 0:
+        player.throws[throw_idx][self.dart_in_turn] = scored_value
+        if self.is_aimed_game():
+            player.score += scored_value
+        else:
+            player.score -= scored_value
+        self.dart_in_turn += 1
+        self.turn_scores.append(scored_value)
+        if self.is_aimed_game():
+            self.status_label.config(text=f"{player.name}: {label} scores {scored_value} (target {target}).")
+        else:
+            self.status_label.config(text=f"{player.name}: {label} = {scored_value}")
+
+        if not self.is_aimed_game() and player.score == 0:
             self.refresh_scoreboard()
             self.finish_game(player)
             return
-        if player.score < 0:
+        if not self.is_aimed_game() and player.score < 0:
             player.score = self.turn_start_score
             player.bust_rows.add(throw_idx)
             self.refresh_scoreboard()
@@ -586,7 +646,7 @@ class DartScoreApp(tk.Tk):
             return
 
         player = self.players[self.current_player_idx]
-        if self.dart_in_turn > 0 and player.throw_count < MAX_THROWS:
+        if self.dart_in_turn > 0 and player.throw_count < self.game_throw_limit():
             player.throw_count += 1
 
         self.dart_in_turn = 0
@@ -594,25 +654,30 @@ class DartScoreApp(tk.Tk):
         self.pending_turn_complete = False
 
         if self.all_throw_rows_used():
-            self.finish_by_lowest_score()
+            self.finish_by_final_score()
             return
 
         self.current_player_idx = self.next_player_with_available_throw()
         self.turn_start_score = self.players[self.current_player_idx].score
+        self.ensure_aimed_target(self.current_throw_index(self.players[self.current_player_idx]))
         self.refresh_status()
 
     def rows_to_score(self, player_idx: int, player: Player) -> int:
         rows = player.throw_count
         if player_idx == self.current_player_idx and (self.dart_in_turn > 0 or self.pending_turn_complete):
             rows = max(rows, player.throw_count + 1)
-        return min(rows, MAX_THROWS)
+        return min(rows, self.game_throw_limit())
 
     def recompute_scores_from_scoreboard(self) -> None:
         for player_idx, player in enumerate(self.players):
-            score = self.game_score.get()
+            score = self.starting_score()
             bust_rows: set[int] = set()
 
             for row_idx in range(self.rows_to_score(player_idx, player)):
+                if self.is_aimed_game():
+                    score += sum(value for value in player.throws[row_idx] if value is not None)
+                    continue
+
                 row_start_score = score
                 for value in player.throws[row_idx]:
                     if value is None:
@@ -630,12 +695,12 @@ class DartScoreApp(tk.Tk):
         return player.throw_count
 
     def all_throw_rows_used(self) -> bool:
-        return all(player.throw_count >= MAX_THROWS for player in self.players)
+        return all(player.throw_count >= self.game_throw_limit() for player in self.players)
 
     def next_player_with_available_throw(self) -> int:
         for offset in range(1, len(self.players) + 1):
             idx = (self.current_player_idx + offset) % len(self.players)
-            if self.players[idx].throw_count < MAX_THROWS:
+            if self.players[idx].throw_count < self.game_throw_limit():
                 return idx
         return self.current_player_idx
 
@@ -644,15 +709,18 @@ class DartScoreApp(tk.Tk):
         self.refresh_status()
         messagebox.showinfo("Game finished", f"{winner.name} wins by reaching zero.")
 
-    def finish_by_lowest_score(self) -> None:
+    def finish_by_final_score(self) -> None:
         self.match_over = True
-        lowest_score = min(player.score for player in self.players)
-        winners = [player.name for player in self.players if player.score == lowest_score]
+        if self.is_aimed_game():
+            best_score = max(player.score for player in self.players)
+            winners = [player.name for player in self.players if player.score == best_score]
+            result = f"All {self.game_throw_limit()} throw rows are used. Highest score: {', '.join(winners)} ({best_score})."
+        else:
+            best_score = min(player.score for player in self.players)
+            winners = [player.name for player in self.players if player.score == best_score]
+            result = f"All {self.game_throw_limit()} throw rows are used. Lowest remaining score: {', '.join(winners)}."
         self.refresh_status()
-        messagebox.showinfo(
-            "Game finished",
-            f"All {MAX_THROWS} throw rows are used. Lowest remaining score: {', '.join(winners)}.",
-        )
+        messagebox.showinfo("Game finished", result)
 
     def player_dart_scores(self, player: Player) -> list[int]:
         return [score for throw in player.throws for score in throw if score is not None]
@@ -716,9 +784,10 @@ class DartScoreApp(tk.Tk):
             return
 
         player = self.players[self.current_player_idx]
-        throw_idx = min(self.current_throw_index(player), MAX_THROWS - 1)
-        block_start = min(throw_idx, max(0, MAX_THROWS - 4))
-        block_end = min(MAX_THROWS - 1, block_start + 3)
+        throw_limit = self.game_throw_limit()
+        throw_idx = min(self.current_throw_index(player), throw_limit - 1)
+        block_start = min(throw_idx, max(0, throw_limit - 4))
+        block_end = min(throw_limit - 1, block_start + 3)
 
         first_cell = self.throw_cells.get((self.current_player_idx, block_start, 0))
         last_row_cell = self.throw_cells.get((self.current_player_idx, block_end, 0))
@@ -760,9 +829,10 @@ class DartScoreApp(tk.Tk):
             canvas.yview_moveto(max(0.0, min(1.0, target_top / total_height)))
 
     def refresh_scoreboard(self) -> None:
+        throw_limit = self.game_throw_limit()
         for player_idx, player in enumerate(self.players):
             self.score_labels[player_idx].config(text=str(player.score))
-            for throw_idx, darts in enumerate(player.throws):
+            for throw_idx, darts in enumerate(player.throws[:throw_limit]):
                 row_values = [value for value in darts if value is not None]
                 for dart_idx, value in enumerate(darts):
                     active = (
@@ -779,6 +849,9 @@ class DartScoreApp(tk.Tk):
                     )
 
                 sum_text = "" if not row_values else str(sum(row_values))
+                if self.is_aimed_game() and row_values:
+                    target = self.aimed_targets[throw_idx]
+                    sum_text = f"{target}/{sum(row_values)}" if target is not None else str(sum(row_values))
                 sum_bg = "#fff7e8"
                 if throw_idx in player.bust_rows:
                     sum_text = "BUST"
@@ -807,13 +880,24 @@ class DartScoreApp(tk.Tk):
 
         player = self.players[self.current_player_idx]
         throw_idx = self.current_throw_index(player)
+        throw_limit = self.game_throw_limit()
+        target = self.ensure_aimed_target(throw_idx)
         if self.turn_label:
             self.turn_label.config(text=f"Throwing: {player.name}")
         if self.dart_label:
-            if self.pending_turn_complete:
-                text = f"Throw {throw_idx + 1}/{MAX_THROWS} complete | Remaining: {player.score}"
+            if self.is_aimed_game():
+                target_text = f"Target: {target}" if target is not None else "Target: -"
+                if self.pending_turn_complete:
+                    text = f"Throw {throw_idx + 1}/{throw_limit} complete | {target_text} | Score: {player.score}"
+                else:
+                    text = (
+                        f"Throw {throw_idx + 1}/{throw_limit} | "
+                        f"Dart {self.dart_in_turn + 1}/{DARTS_PER_THROW} | {target_text} | Score: {player.score}"
+                    )
+            elif self.pending_turn_complete:
+                text = f"Throw {throw_idx + 1}/{throw_limit} complete | Remaining: {player.score}"
             else:
-                text = f"Throw {throw_idx + 1}/{MAX_THROWS} | Dart {self.dart_in_turn + 1}/{DARTS_PER_THROW} | Remaining: {player.score}"
+                text = f"Throw {throw_idx + 1}/{throw_limit} | Dart {self.dart_in_turn + 1}/{DARTS_PER_THROW} | Remaining: {player.score}"
             self.dart_label.config(text=text)
         if self.throw_label:
             thrown = ", ".join(str(score) for score in self.turn_scores) if self.turn_scores else "-"
