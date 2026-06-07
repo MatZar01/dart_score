@@ -222,10 +222,13 @@ class DartScoreApp(tk.Tk):
         self.stats_labels.clear()
         self.stats_histograms.clear()
 
+        throw_col_width = 68
+        dart_col_width = 52
+        player_group_width = dart_col_width * 4
         for column in range(1 + len(self.players) * 4):
-            width = 68 if column == 0 else 52
-            fixed_header.columnconfigure(column, minsize=width)
-            body_table.columnconfigure(column, minsize=width)
+            width = throw_col_width if column == 0 else dart_col_width
+            fixed_header.columnconfigure(column, minsize=width, weight=0)
+            body_table.columnconfigure(column, minsize=width, weight=0)
 
         tk.Label(fixed_header, text="", width=8, bg="#2f261f", fg="#fff8ec").grid(
             row=0, column=0, rowspan=3, sticky="nsew", padx=1, pady=1
@@ -233,19 +236,24 @@ class DartScoreApp(tk.Tk):
 
         for player_idx, player in enumerate(self.players):
             base_col = 1 + player_idx * 4
-            name = tk.Label(
-                fixed_header,
+            name_frame = tk.Frame(fixed_header, width=player_group_width, bg="#2f261f")
+            name_frame.grid(row=0, column=base_col, columnspan=4, sticky="nsew", padx=1, pady=1)
+            name_frame.grid_propagate(False)
+            tk.Label(
+                name_frame,
                 text=player.name,
                 bg="#2f261f",
                 fg="#fff8ec",
                 font=("DejaVu Sans", 12, "bold"),
                 padx=6,
                 pady=6,
-            )
-            name.grid(row=0, column=base_col, columnspan=4, sticky="nsew", padx=1, pady=1)
+            ).pack(fill="both", expand=True)
 
+            score_frame = tk.Frame(fixed_header, width=player_group_width, bg="#f7c76f")
+            score_frame.grid(row=1, column=base_col, columnspan=4, sticky="nsew", padx=1, pady=1)
+            score_frame.grid_propagate(False)
             score = tk.Label(
-                fixed_header,
+                score_frame,
                 text=str(player.score),
                 bg="#f7c76f",
                 fg="#241f1b",
@@ -253,7 +261,7 @@ class DartScoreApp(tk.Tk):
                 padx=6,
                 pady=7,
             )
-            score.grid(row=1, column=base_col, columnspan=4, sticky="nsew", padx=1, pady=1)
+            score.pack(fill="both", expand=True)
             self.score_labels[player_idx] = score
 
             for offset, label in enumerate(("D1", "D2", "D3", "Sum")):
@@ -416,7 +424,7 @@ class DartScoreApp(tk.Tk):
             start = i * 18 - 9
             end = i * 18 + 9
             base = "#f6ead3" if i % 2 == 0 else "#22201d"
-            base_text = "#22201d" if i % 2 == 0 else "#f6ead3"
+            base_text = "#000000"
             double_triple = "#bf332b" if i % 2 == 0 else "#237a4b"
             self._sector(canvas, cx, cy, radii["triple_outer"], radii["single_outer"], start, end, base, f"S{number}", number)
             self._sector(canvas, cx, cy, radii["single_inner"], radii["triple_outer"], start, end, double_triple, f"T{number}", number * 3)
