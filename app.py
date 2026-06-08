@@ -46,7 +46,9 @@ class DartScoreApp(tk.Tk):
         self.aimed_targets: list[int | None] = [None] * MAX_THROWS
 
         self.score_labels: dict[int, tk.Label] = {}
-        self.throw_cells: dict[tuple[int, int, int], tk.Label] = {}
+        self.throw_cells: dict[tuple[int, int, int], tk.Frame] = {}
+        self.throw_value_labels: dict[tuple[int, int, int], tk.Label] = {}
+        self.throw_underline_canvases: dict[tuple[int, int, int], tk.Canvas] = {}
         self.sum_cells: dict[tuple[int, int], tk.Label] = {}
         self.stats_labels: dict[int, tk.Label] = {}
         self.stats_histograms: dict[int, tk.Canvas] = {}
@@ -216,7 +218,7 @@ class DartScoreApp(tk.Tk):
         )
         header.grid(row=0, column=0, sticky="w", pady=(0, 10))
 
-        fixed_canvas = tk.Canvas(holder, height=104, bg="#fffaf0", highlightthickness=0)
+        fixed_canvas = tk.Canvas(holder, height=96, bg="#fffaf0", highlightthickness=0)
         fixed_header = tk.Frame(fixed_canvas, bg="#fffaf0")
         fixed_window_id = fixed_canvas.create_window((0, 0), window=fixed_header, anchor="nw")
         fixed_canvas.grid(row=1, column=0, sticky="ew")
@@ -270,21 +272,24 @@ class DartScoreApp(tk.Tk):
 
         self.score_labels.clear()
         self.throw_cells.clear()
+        self.throw_value_labels.clear()
+        self.throw_underline_canvases.clear()
         self.sum_cells.clear()
         self.stats_labels.clear()
         self.stats_histograms.clear()
 
-        throw_col_width = 68
-        dart_col_width = 52
+        throw_col_width = 46
+        dart_col_width = 42
         player_group_width = dart_col_width * 4
         for column in range(1 + len(self.players) * 4):
             width = throw_col_width if column == 0 else dart_col_width
             fixed_header.columnconfigure(column, minsize=width, weight=0)
             body_table.columnconfigure(column, minsize=width, weight=0)
 
-        tk.Label(fixed_header, text="", width=8, bg="#2f261f", fg="#fff8ec").grid(
-            row=0, column=0, rowspan=3, sticky="nsew", padx=1, pady=1
-        )
+        top_left = tk.Frame(fixed_header, width=throw_col_width, bg="#2f261f")
+        top_left.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=1, pady=1)
+        top_left.grid_propagate(False)
+        tk.Label(top_left, text="", bg="#2f261f", fg="#fff8ec").pack(fill="both", expand=True)
 
         for player_idx, player in enumerate(self.players):
             base_col = 1 + player_idx * 4
@@ -318,66 +323,100 @@ class DartScoreApp(tk.Tk):
 
             sum_label = "Tgt/Sum" if self.is_aimed_game() else "Sum"
             for offset, label in enumerate(("D1", "D2", "D3", sum_label)):
+                column_header = tk.Frame(fixed_header, width=dart_col_width, bg="#4b3a2e")
+                column_header.grid(row=2, column=base_col + offset, sticky="nsew", padx=1, pady=1)
+                column_header.grid_propagate(False)
                 tk.Label(
-                    fixed_header,
+                    column_header,
                     text=label,
-                    width=6,
                     bg="#4b3a2e",
                     fg="#fff8ec",
-                    font=("DejaVu Sans", 10, "bold"),
-                    padx=3,
-                    pady=5,
-                ).grid(row=2, column=base_col + offset, sticky="nsew", padx=1, pady=1)
+                    font=("DejaVu Sans", 8, "bold"),
+                    padx=1,
+                    pady=3,
+                ).pack(fill="both", expand=True)
 
+        throw_header = tk.Frame(fixed_header, width=throw_col_width, bg="#4b3a2e")
+        throw_header.grid(row=2, column=0, sticky="nsew", padx=1, pady=1)
+        throw_header.grid_propagate(False)
         tk.Label(
-            fixed_header,
+            throw_header,
             text="Throw",
-            width=8,
             bg="#4b3a2e",
             fg="#fff8ec",
-            font=("DejaVu Sans", 10, "bold"),
-            padx=3,
-            pady=5,
-        ).grid(row=2, column=0, sticky="nsew", padx=1, pady=1)
+            font=("DejaVu Sans", 8, "bold"),
+            padx=1,
+            pady=3,
+        ).pack(fill="both", expand=True)
 
         for throw_idx in range(self.game_throw_limit()):
             tk.Label(
                 body_table,
                 text=str(throw_idx + 1),
-                width=8,
                 bg="#f7e4bb",
                 fg="#241f1b",
-                font=("DejaVu Sans", 10, "bold"),
-                pady=6,
+                font=("DejaVu Sans", 8, "bold"),
+                pady=2,
             ).grid(row=throw_idx, column=0, sticky="nsew", padx=1, pady=1)
             for player_idx in range(len(self.players)):
                 base_col = 1 + player_idx * 4
                 for dart_idx in range(DARTS_PER_THROW):
-                    cell = tk.Label(
+                    cell = tk.Frame(
                         body_table,
-                        text="",
-                        width=6,
+                        width=dart_col_width,
                         bg="#fffdf7",
-                        fg="#241f1b",
-                        font=("DejaVu Sans", 10, "bold"),
-                        pady=6,
                     )
                     cell.grid(row=throw_idx, column=base_col + dart_idx, sticky="nsew", padx=1, pady=1)
+                    cell.grid_propagate(False)
+                    value_label = tk.Label(
+                        cell,
+                        text="",
+                        bg="#fffdf7",
+                        fg="#241f1b",
+                        font=("DejaVu Sans", 8, "bold"),
+                        pady=1,
+                    )
+                    value_label.pack(fill="both", expand=True)
+                    underline_canvas = tk.Canvas(
+                        cell,
+                        width=dart_col_width,
+                        height=5,
+                        bg="#fffdf7",
+                        highlightthickness=0,
+                    )
+                    underline_canvas.pack(fill="x", side="bottom")
                     cell.bind(
                         "<Button-1>",
                         lambda _event, p=player_idx, t=throw_idx, d=dart_idx: self.edit_score_cell(p, t, d),
                     )
+                    value_label.bind(
+                        "<Button-1>",
+                        lambda _event, p=player_idx, t=throw_idx, d=dart_idx: self.edit_score_cell(p, t, d),
+                    )
+                    underline_canvas.bind(
+                        "<Button-1>",
+                        lambda _event, p=player_idx, t=throw_idx, d=dart_idx: self.edit_score_cell(p, t, d),
+                    )
                     self.throw_cells[(player_idx, throw_idx, dart_idx)] = cell
-                sum_cell = tk.Label(
+                    self.throw_value_labels[(player_idx, throw_idx, dart_idx)] = value_label
+                    self.throw_underline_canvases[(player_idx, throw_idx, dart_idx)] = underline_canvas
+                sum_frame = tk.Frame(
                     body_table,
+                    width=dart_col_width,
+                    bg="#fff7e8",
+                )
+                sum_frame.grid(row=throw_idx, column=base_col + 3, sticky="nsew", padx=1, pady=1)
+                sum_frame.grid_propagate(False)
+                sum_cell = tk.Label(
+                    sum_frame,
                     text="",
-                    width=6,
                     bg="#fff7e8",
                     fg="#241f1b",
-                    font=("DejaVu Sans", 10, "bold"),
-                    pady=6,
+                    font=("DejaVu Sans", 8, "bold"),
+                    padx=1,
+                    pady=2,
                 )
-                sum_cell.grid(row=throw_idx, column=base_col + 3, sticky="nsew", padx=1, pady=1)
+                sum_cell.pack(fill="both", expand=True)
                 self.sum_cells[(player_idx, throw_idx)] = sum_cell
 
         stats_canvas = tk.Canvas(holder, height=210, bg="#fffaf0", highlightthickness=0)
@@ -779,6 +818,58 @@ class DartScoreApp(tk.Tk):
             f"Std dev: {stdev_value:.2f}"
         )
 
+    def underline_counts_for_throw_row(self, throw_idx: int) -> dict[tuple[int, int], int]:
+        ranked_darts = sorted(
+            (
+                (player_idx, dart_idx, value)
+                for player_idx, player in enumerate(self.players)
+                for dart_idx, value in enumerate(player.throws[throw_idx])
+                if value is not None
+            ),
+            key=lambda item: (-item[2], item[0], item[1]),
+        )
+        return {
+            (player_idx, dart_idx): DARTS_PER_THROW - rank
+            for rank, (player_idx, dart_idx, _value) in enumerate(ranked_darts[:DARTS_PER_THROW])
+        }
+
+    def underline_counts_by_throw_row(self, throw_limit: int) -> dict[int, dict[tuple[int, int], int]]:
+        return {throw_idx: self.underline_counts_for_throw_row(throw_idx) for throw_idx in range(throw_limit)}
+
+    def draw_throw_underline(self, key: tuple[int, int, int], rank_marker: int, bg: str) -> None:
+        canvas = self.throw_underline_canvases[key]
+        canvas.configure(bg=bg)
+        canvas.delete("all")
+        if rank_marker <= 0:
+            return
+
+        width = max(canvas.winfo_width(), canvas.winfo_reqwidth(), 24)
+        left = max(4, width * 0.22)
+        right = min(width - 4, width * 0.78)
+        if rank_marker == 3:
+            canvas.create_line(left, 2, right, 2, fill="#241f1b", width=2)
+        elif rank_marker == 2:
+            canvas.create_line(left, 1, right, 1, fill="#241f1b", width=1)
+            canvas.create_line(left, 4, right, 4, fill="#241f1b", width=1)
+        else:
+            canvas.create_line(left, 3, right, 3, fill="#241f1b", width=1)
+
+    def update_throw_cell(
+        self,
+        key: tuple[int, int, int],
+        value: int | None,
+        bg: str,
+        underline_count: int,
+    ) -> None:
+        cursor = "hand2" if value is not None else ""
+        self.throw_cells[key].config(bg=bg, cursor=cursor)
+        self.throw_value_labels[key].config(
+            text="" if value is None else str(value),
+            bg=bg,
+            cursor=cursor,
+        )
+        self.draw_throw_underline(key, underline_count, bg)
+
     def scroll_to_current_input(self) -> None:
         if self.scoreboard_canvas is None or self.match_over:
             return
@@ -786,13 +877,10 @@ class DartScoreApp(tk.Tk):
         player = self.players[self.current_player_idx]
         throw_limit = self.game_throw_limit()
         throw_idx = min(self.current_throw_index(player), throw_limit - 1)
-        block_start = min(throw_idx, max(0, throw_limit - 4))
-        block_end = min(throw_limit - 1, block_start + 3)
 
-        first_cell = self.throw_cells.get((self.current_player_idx, block_start, 0))
-        last_row_cell = self.throw_cells.get((self.current_player_idx, block_end, 0))
-        sum_cell = self.sum_cells.get((self.current_player_idx, block_start))
-        if first_cell is None or last_row_cell is None or sum_cell is None:
+        first_cell = self.throw_cells.get((self.current_player_idx, throw_idx, 0))
+        sum_cell = self.sum_cells.get((self.current_player_idx, throw_idx))
+        if first_cell is None or sum_cell is None:
             return
 
         self.update_idletasks()
@@ -808,9 +896,10 @@ class DartScoreApp(tk.Tk):
         visible_height = canvas.winfo_height()
 
         group_left = first_cell.winfo_x()
-        group_right = sum_cell.winfo_x() + sum_cell.winfo_width()
-        block_top = first_cell.winfo_y()
-        block_bottom = last_row_cell.winfo_y() + last_row_cell.winfo_height()
+        sum_frame = sum_cell.master
+        group_right = sum_frame.winfo_x() + sum_frame.winfo_width()
+        row_top = first_cell.winfo_y()
+        row_bottom = row_top + first_cell.winfo_height()
         margin = 8
 
         target_left = visible_left
@@ -820,8 +909,13 @@ class DartScoreApp(tk.Tk):
             target_left = min(total_width - visible_width, group_right - visible_width + margin)
 
         target_top = visible_top
-        if block_top < visible_top + margin or block_bottom > visible_top + visible_height - margin:
-            target_top = min(max(0, block_top - margin), max(0, total_height - visible_height))
+        if row_top < visible_top + margin:
+            target_top = max(0, row_top - margin)
+        elif row_bottom > visible_top + visible_height - margin:
+            target_top = min(
+                max(0, row_bottom - visible_height + margin),
+                max(0, total_height - visible_height),
+            )
 
         if total_width > visible_width:
             canvas.xview_moveto(max(0.0, min(1.0, target_left / total_width)))
@@ -830,10 +924,12 @@ class DartScoreApp(tk.Tk):
 
     def refresh_scoreboard(self) -> None:
         throw_limit = self.game_throw_limit()
+        underline_counts = self.underline_counts_by_throw_row(throw_limit)
         for player_idx, player in enumerate(self.players):
             self.score_labels[player_idx].config(text=str(player.score))
             for throw_idx, darts in enumerate(player.throws[:throw_limit]):
                 row_values = [value for value in darts if value is not None]
+                row_underline_counts = underline_counts[throw_idx]
                 for dart_idx, value in enumerate(darts):
                     active = (
                         not self.match_over
@@ -842,10 +938,11 @@ class DartScoreApp(tk.Tk):
                     )
                     completed = throw_idx < player.throw_count
                     bg = "#f7e4bb" if active else "#f1eadf" if completed else "#fffdf7"
-                    self.throw_cells[(player_idx, throw_idx, dart_idx)].config(
-                        text="" if value is None else str(value),
-                        bg=bg,
-                        cursor="hand2" if value is not None else "",
+                    self.update_throw_cell(
+                        (player_idx, throw_idx, dart_idx),
+                        value,
+                        bg,
+                        row_underline_counts.get((player_idx, dart_idx), 0),
                     )
 
                 sum_text = "" if not row_values else str(sum(row_values))
